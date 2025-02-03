@@ -1,6 +1,6 @@
 name: Trust
-version: '1.0-SNAPSHOT'
+version: 1.0
 main: de.nikey.trust.Trust
-api-version: '1.21'
+api-version: 1.21
 authors: [ Nikey ]
 website: https://github.com/NikeyV1
