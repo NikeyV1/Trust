@@ -4,3 +4,6 @@ main: de.nikey.trust.Trust
 api-version: 1.21
 authors: [ Nikey ]
 website: https://github.com/NikeyV1
+commands:
+  trust:
+    usage: </trust [add|remove|list|friendlyfire] {Player}>

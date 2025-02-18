@@ -1,14 +1,15 @@
 package de.nikey.trust;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
@@ -25,22 +26,34 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
     private File configFile;
     private FileConfiguration config;
 
+    private static Trust plugin;
+
     @Override
     public void onEnable() {
+        plugin = this;
         getCommand("trust").setExecutor(this);
         getCommand("trust").setTabCompleter(this);
         Bukkit.getPluginManager().registerEvents(this, this);
-        loadTrustData();
+        saveDefaultConfig();
+    }
+
+    public static Trust getPlugin() {
+        return plugin;
     }
 
     @Override
     public void onDisable() {
-        saveTrustData();
+        saveConfig();
     }
 
     private void loadTrustData() {
         configFile = new File(getDataFolder(), "trust.yml");
         if (!configFile.exists()) {
+            try {
+                configFile.createNewFile();
+            } catch (IOException e) {
+                getLogger().severe("Couldn't create file");
+            }
             saveResource("trust.yml", false);
         }
         config = YamlConfiguration.loadConfiguration(configFile);
@@ -59,19 +72,6 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
         }
     }
 
-    private void saveTrustData() {
-        for (Map.Entry<UUID, Set<UUID>> entry : trustMap.entrySet()) {
-            List<String> trustedList = entry.getValue().stream().map(UUID::toString).toList();
-            config.set(entry.getKey().toString() + ".trusted", trustedList);
-            config.set(entry.getKey().toString() + ".friendly_fire", friendlyFireMap.getOrDefault(entry.getKey(), true));
-        }
-        try {
-            config.save(configFile);
-        } catch (IOException e) {
-            getLogger().severe("Could not save trust data!");
-            e.printStackTrace();
-        }
-    }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
@@ -113,43 +113,45 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
         return true;
     }
 
-    private void sendUsage(Player player) {
-        player.sendMessage(Component.text("Usage: /trust <list|add|remove>"));
-    }
-
-    private void handleFriendlyFire(Player player, boolean enable) {
-        friendlyFireMap.put(player.getUniqueId(), enable);
-        player.sendMessage(Component.text("Friendly Fire has been " + (enable ? "enabled" : "disabled") + "."));
-    }
-
     @EventHandler
-    public void onEntityDamage(EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof Player victim) || !(event.getDamager() instanceof Player attacker)) {
+    public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+        Player attacker = null;
+
+        if (event.getDamager() instanceof Player) {
+            attacker = (Player) event.getDamager();
+        } else if (event.getDamager() instanceof Projectile projectile && projectile.getShooter() instanceof Player) {
+            attacker = (Player) projectile.getShooter();
+        }
+
+        if (!(event.getEntity() instanceof Player victim) || attacker == null) {
             return;
         }
 
         UUID attackerUUID = attacker.getUniqueId();
         UUID victimUUID = victim.getUniqueId();
 
-        if (isTrusted(attackerUUID, victimUUID) && !friendlyFireMap.getOrDefault(attackerUUID, true)) {
+        if (isTrusted(attackerUUID, victimUUID) && !hasFriendlyFire(attackerUUID)) {
             event.setCancelled(true);
-            attacker.sendMessage(Component.text("You can't attack ")
-                    .append(Component.text(victim.getName()))
-                    .append(Component.text(" because Friendly Fire is disabled!")));
         }
     }
 
+    private void sendUsage(Player player) {
+        player.sendMessage(Component.text("Usage: /trust <list|add|remove|friendlyfire>"));
+    }
+
     private void handleList(Player player) {
-        Set<UUID> trusted = trustMap.getOrDefault(player.getUniqueId(), Collections.emptySet());
+        List<UUID> trusted = getTrustedPlayers(player.getUniqueId());
+
         if (trusted.isEmpty()) {
             player.sendMessage(Component.text("You haven't trusted anyone yet."));
             return;
         }
-        player.sendMessage(Component.text("Trusted players:"));
+
+        player.sendMessage(Component.text("Trusted players:").color(NamedTextColor.DARK_AQUA));
         for (UUID uuid : trusted) {
-            OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
-            if (offlinePlayer.hasPlayedBefore()) {
-                player.sendMessage(Component.text("- " + offlinePlayer.getName()));
+            Player onlinePlayer = Bukkit.getPlayer(uuid);
+            if (onlinePlayer != null && player.canSee(onlinePlayer)) {
+                player.sendMessage(Component.text("- " + onlinePlayer.getName()).color(NamedTextColor.AQUA));
             }
         }
     }
@@ -164,8 +166,16 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
             player.sendMessage(Component.text("You cannot trust yourself."));
             return;
         }
-        trustPlayer(player.getUniqueId(), targetUUID);
-        player.sendMessage(Component.text("You have trusted " + targetName + "."));
+
+        List<UUID> trusted = new ArrayList<>(getTrustedPlayers(player.getUniqueId()));
+        if (trusted.contains(targetUUID)) {
+            player.sendMessage(Component.text(targetName + " is already trusted."));
+            return;
+        }
+
+        trusted.add(targetUUID);
+        saveTrustData(player.getUniqueId(), trusted, hasFriendlyFire(player.getUniqueId()));
+        player.sendMessage(Component.text("You have trusted " + targetName + ".").color(NamedTextColor.GREEN));
     }
 
     private void handleRemove(Player player, String targetName) {
@@ -174,11 +184,21 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
             player.sendMessage(Component.text("Player not found."));
             return;
         }
-        if (untrustPlayer(player.getUniqueId(), targetUUID)) {
-            player.sendMessage(Component.text("You have removed trust for " + targetName + "."));
-        } else {
+
+        List<UUID> trusted = new ArrayList<>(getTrustedPlayers(player.getUniqueId()));
+        if (!trusted.remove(targetUUID)) {
             player.sendMessage(Component.text("That player is not trusted."));
+            return;
         }
+
+        saveTrustData(player.getUniqueId(), trusted, hasFriendlyFire(player.getUniqueId()));
+    player.sendMessage(Component.text("You have removed trust for " + targetName + ".").color(NamedTextColor.RED));
+    }
+
+
+    private void handleFriendlyFire(Player player, boolean enable) {
+        saveTrustData(player.getUniqueId(), getTrustedPlayers(player.getUniqueId()), enable);
+        player.sendMessage(Component.text("Friendly Fire has been " + (enable ? "enabled" : "disabled") + ".").color(NamedTextColor.GRAY));
     }
 
     @Override
@@ -201,7 +221,6 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
                 return trustMap.getOrDefault(player.getUniqueId(), Collections.emptySet()).stream()
                         .map(Bukkit::getPlayer)
                         .filter(Objects::nonNull)
-                        .filter(player::canSee)
                         .map(Player::getName)
                         .toList();
             }
@@ -214,20 +233,24 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
         return Collections.emptyList();
     }
 
-    public boolean isTrusted(UUID owner, UUID target) {
-        return trustMap.getOrDefault(owner, Collections.emptySet()).contains(target);
+    public static boolean isTrusted(UUID owner, UUID target) {
+        return getTrustedPlayers(owner).contains(target);
     }
 
-    public void trustPlayer(UUID owner, UUID target) {
-        trustMap.computeIfAbsent(owner, k -> new HashSet<>()).add(target);
+    public static List<UUID> getTrustedPlayers(UUID playerUUID) {
+        return getPlugin().getConfig().getStringList("trust." + playerUUID + ".trusted").stream()
+                .map(UUID::fromString)
+                .toList();
     }
 
-    public boolean untrustPlayer(UUID owner, UUID target) {
-        Set<UUID> trusted = trustMap.get(owner);
-        return trusted != null && trusted.remove(target);
+    public static boolean hasFriendlyFire(UUID playerUUID) {
+        return getPlugin().getConfig().getBoolean("trust." + playerUUID + ".friendlyFire", false);
     }
 
-    public Set<UUID> getTrustedPlayers(UUID owner) {
-        return trustMap.getOrDefault(owner, Collections.emptySet());
+    public void saveTrustData(UUID playerUUID, List<UUID> trustedPlayers, boolean friendlyFire) {
+        getConfig().set("trust." + playerUUID + ".trusted", trustedPlayers.stream().map(UUID::toString).toList());
+        getConfig().set("trust." + playerUUID + ".friendlyFire", friendlyFire);
+        saveConfig();
     }
+
 }
