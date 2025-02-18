@@ -15,18 +15,12 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.jetbrains.annotations.NotNull;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public final class Trust extends JavaPlugin implements TabExecutor, Listener {
-
-    private final Map<UUID, Set<UUID>> trustMap = new HashMap<>();
-    private final Map<UUID, Boolean> friendlyFireMap = new HashMap<>();
-    private File configFile;
-    private FileConfiguration config;
 
     private static Trust plugin;
 
@@ -50,7 +44,7 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
 
 
     @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, String @NotNull [] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Component.text("Only players can use this command!"));
             return true;
