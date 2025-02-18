@@ -3,6 +3,7 @@ package de.nikey.trust;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
@@ -18,6 +19,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public final class Trust extends JavaPlugin implements TabExecutor, Listener {
 
@@ -44,32 +46,6 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
     @Override
     public void onDisable() {
         saveConfig();
-    }
-
-    private void loadTrustData() {
-        configFile = new File(getDataFolder(), "trust.yml");
-        if (!configFile.exists()) {
-            try {
-                configFile.createNewFile();
-            } catch (IOException e) {
-                getLogger().severe("Couldn't create file");
-            }
-            saveResource("trust.yml", false);
-        }
-        config = YamlConfiguration.loadConfiguration(configFile);
-
-        for (String key : config.getKeys(false)) {
-            UUID owner = UUID.fromString(key);
-            List<String> trustedList = config.getStringList(key + ".trusted");
-            boolean friendlyFire = config.getBoolean(key + ".friendly_fire", true);
-
-            Set<UUID> trustedUUIDs = new HashSet<>();
-            for (String uuidString : trustedList) {
-                trustedUUIDs.add(UUID.fromString(uuidString));
-            }
-            trustMap.put(owner, trustedUUIDs);
-            friendlyFireMap.put(owner, friendlyFire);
-        }
     }
 
 
@@ -218,11 +194,17 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
             }
 
             if (args[0].equalsIgnoreCase("remove")) {
-                return trustMap.getOrDefault(player.getUniqueId(), Collections.emptySet()).stream()
-                        .map(Bukkit::getPlayer)
-                        .filter(Objects::nonNull)
-                        .map(Player::getName)
-                        .toList();
+                List<UUID> trusted = getTrustedPlayers(player.getUniqueId());
+
+                if (trusted.isEmpty()) {
+                    return Bukkit.getOnlinePlayers().stream()
+                            .filter(player::canSee)
+                            .map(Player::getName)
+                            .toList();
+                }
+                return trusted.stream()
+                        .map(uuid -> Bukkit.getOfflinePlayer(uuid).getName())
+                        .collect(Collectors.toList());
             }
 
             if (args[0].equalsIgnoreCase("friendlyfire")) {
