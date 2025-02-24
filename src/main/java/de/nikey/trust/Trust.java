@@ -50,11 +50,6 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
             return true;
         }
 
-        if (args.length < 1) {
-            sendUsage(player);
-            return true;
-        }
-
         switch (args[0].toLowerCase()) {
             case "list" -> handleList(player);
             case "add" -> {
