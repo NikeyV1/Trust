@@ -114,10 +114,8 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
 
         player.sendMessage(Component.text("Trusted players:").color(NamedTextColor.DARK_AQUA));
         for (UUID uuid : trusted) {
-            Player onlinePlayer = Bukkit.getPlayer(uuid);
-            if (onlinePlayer != null && player.canSee(onlinePlayer)) {
-                player.sendMessage(Component.text("- " + onlinePlayer.getName()).color(NamedTextColor.AQUA));
-            }
+            OfflinePlayer onlinePlayer = Bukkit.getOfflinePlayer(uuid);
+            player.sendMessage(Component.text("- " + onlinePlayer.getName()).color(NamedTextColor.AQUA));
         }
     }
 
