@@ -7,8 +7,6 @@ import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
@@ -68,7 +66,8 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
             }
             case "friendlyfire" -> {
                 if (args.length < 2 || (!args[1].equalsIgnoreCase("on") && !args[1].equalsIgnoreCase("off"))) {
-                    player.sendMessage(Component.text("Usage: /trust friendlyfire <on|off>"));
+                    String choice = hasFriendlyFire(player.getUniqueId()) ? "on" : "off";
+                    player.sendMessage(Component.text("Friendly fire is currently: " + choice));
                     return true;
                 }
                 handleFriendlyFire(player, args[1].equalsIgnoreCase("on"));
@@ -95,7 +94,7 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
         UUID attackerUUID = attacker.getUniqueId();
         UUID victimUUID = victim.getUniqueId();
 
-        if (isTrusted(attackerUUID, victimUUID) && !hasFriendlyFire(attackerUUID)) {
+        if (trusts(attackerUUID, victimUUID)) {
             event.setCancelled(true);
         }
     }
@@ -191,6 +190,7 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
                 }
                 return trusted.stream()
                         .map(uuid -> Bukkit.getOfflinePlayer(uuid).getName())
+                        .filter(Objects::nonNull)
                         .collect(Collectors.toList());
             }
 
@@ -222,4 +222,7 @@ public final class Trust extends JavaPlugin implements TabExecutor, Listener {
         saveConfig();
     }
 
+    public static boolean trusts(UUID player, UUID target) {
+        return isTrusted(player, target) && !hasFriendlyFire(player);
+    }
 }
